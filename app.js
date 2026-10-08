@@ -4,7 +4,7 @@
 const KEY = 'bm.v1';
 const root = document.getElementById('app');
 
-let cfg = { title: 'Bird Monitor', spots: [], taxa: {} };
+let cfg = { title: 'Bird Monitor', spots: [], taxa: {}, taxaFull: {} };
 let db = loadDb();
 let view = { taxon: null, q: '', seenOnly: false };
 let timerId = null;
@@ -17,7 +17,7 @@ function loadDb() {
     const d = JSON.parse(localStorage.getItem(KEY));
     if (d && Array.isArray(d.sessions)) return d;
   } catch (e) {}
-  return { spots: [], custom: {}, sessions: [], active: null, observer: '', lastSpot: '' };
+  return { spots: [], custom: {}, sessions: [], active: null, observer: '', lastSpot: '', lastListType: 'quick' };
 }
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(db)); }
@@ -40,11 +40,17 @@ function h(tag, attrs, ...kids) {
   }
   return el;
 }
-const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 const pad = n => String(n).padStart(2, '0');
 function localStamp(iso) {
   const d = new Date(iso);
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+const slugify = s => (s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'observer';
+function sessionId(observer, existingIds) {
+  const d = new Date();
+  const base = `${slugify(observer)}_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}T${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  if (!existingIds.has(base)) return base;
+  return base + '-' + Math.random().toString(36).slice(2, 4);
 }
 function fmtDur(ms) {
   const s = Math.max(0, Math.floor(ms / 1000));
@@ -55,16 +61,32 @@ const activeSession = () => db.sessions.find(s => s.id === db.active) || null;
 const allSpots = () => [...new Set([...(cfg.spots || []), ...db.spots])];
 const norm = x => (typeof x === 'string' ? { n: x } : x);
 
-function speciesByTaxon() {
+function baseListFor(tx, listType) {
+  const full = cfg.taxaFull && cfg.taxaFull[tx];
+  return (listType === 'full' && full) ? full : ((cfg.taxa || {})[tx] || []);
+}
+function speciesByTaxon(listType) {
   const out = {};
-  for (const [tx, list] of Object.entries(cfg.taxa || {})) {
-    out[tx] = list.map(norm).sort((a, b) => a.n.localeCompare(b.n));
+  const taxa = new Set([...Object.keys(cfg.taxa || {}), ...Object.keys(cfg.taxaFull || {})]);
+  for (const tx of taxa) {
+    out[tx] = baseListFor(tx, listType).map(norm).sort((a, b) => a.n.localeCompare(b.n));
   }
   for (const [tx, list] of Object.entries(db.custom)) {
     out[tx] = out[tx] || [];
     for (const it of list) if (!out[tx].some(x => x.n.toLowerCase() === it.n.toLowerCase())) out[tx].push(it);
   }
   return out;
+}
+// Looks up a species by name across both the quick and full lists for a taxon (ignoring which is active),
+// so picking a name that exists in the "other" tier reuses its scientific name instead of duplicating it.
+function knownSpecies(tx, name) {
+  const lower = name.toLowerCase();
+  const pools = [(cfg.taxa || {})[tx] || [], (cfg.taxaFull || {})[tx] || [], db.custom[tx] || []];
+  for (const pool of pools) {
+    const hit = pool.map(norm).find(x => x.n.toLowerCase() === lower);
+    if (hit) return hit;
+  }
+  return null;
 }
 
 // ---------- export ----------
@@ -73,15 +95,22 @@ function csvCell(v) {
   if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;          // avoid spreadsheet formula injection
   return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
+function speciesSource(tx, name, listType) {
+  const lower = name.toLowerCase();
+  const otherType = listType === 'full' ? 'quick' : 'full';
+  if (baseListFor(tx, listType).map(norm).some(x => x.n.toLowerCase() === lower)) return listType;
+  if (baseListFor(tx, otherType).map(norm).some(x => x.n.toLowerCase() === lower)) return otherType;
+  return 'new';
+}
 function buildCsv(sessions) {
-  const inList = new Set();
-  for (const [tx, list] of Object.entries(cfg.taxa || {})) for (const it of list) inList.add(tx + '|' + norm(it).n.toLowerCase());
-  const head = ['session_id', 'observer', 'spot', 'session_start', 'session_end', 'taxon', 'species', 'count', 'in_checklist', 'timestamp_utc', 'timestamp_local'];
+  const head = ['session_id', 'observer', 'spot', 'list_type', 'lat', 'lng', 'session_start', 'session_end',
+    'taxon', 'species', 'count', 'species_source', 'timestamp_utc', 'timestamp_local'];
   const rows = [head];
   for (const s of sessions) {
+    const listType = s.listType || 'quick';
     for (const e of s.events) {
-      rows.push([s.id, s.observer, s.spot, s.start, s.end || '', e.tx, e.sp, 1,
-        inList.has(e.tx + '|' + e.sp.toLowerCase()) ? 'TRUE' : 'FALSE', e.t, localStamp(e.t)]);
+      rows.push([s.id, s.observer, s.spot, listType, s.lat ?? '', s.lng ?? '', s.start, s.end || '', e.tx, e.sp, 1,
+        speciesSource(e.tx, e.sp, listType), e.t, localStamp(e.t)]);
     }
   }
   return '﻿' + rows.map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
@@ -132,6 +161,13 @@ function renderHome() {
     allSpots().map(sp => h('option', { value: sp }, sp)));
   spotSel.value = allSpots().includes(db.lastSpot) ? db.lastSpot : '';
 
+  const listType = db.lastListType === 'full' ? 'full' : 'quick';
+  const listRadioQuick = h('input', { type: 'radio', name: 'listtype', value: 'quick', checked: listType === 'quick' });
+  const listRadioFull = h('input', { type: 'radio', name: 'listtype', value: 'full', checked: listType === 'full' });
+  const listPicker = h('div', { class: 'tools' },
+    h('label', { class: 'chk' }, listRadioQuick, 'Quick list (~50 species)'),
+    h('label', { class: 'chk' }, listRadioFull, 'Full checklist'));
+
   const addSpot = () => {
     const name = (prompt('New spot name:') || '').trim();
     if (!name) return;
@@ -144,11 +180,21 @@ function renderHome() {
     const observer = obs.value.trim();
     if (!observer) { obs.focus(); return alert('Enter your name.'); }
     if (!spotSel.value) return alert('Select a spot.');
-    const s = { id: uid(), observer, spot: spotSel.value, start: new Date().toISOString(), end: null, events: [] };
+    const chosenListType = listRadioFull.checked ? 'full' : 'quick';
+    const existingIds = new Set(db.sessions.map(x => x.id));
+    const s = { id: sessionId(observer, existingIds), observer, spot: spotSel.value, listType: chosenListType,
+      lat: null, lng: null, start: new Date().toISOString(), end: null, events: [] };
     db.sessions.push(s);
-    db.active = s.id; db.observer = observer; db.lastSpot = spotSel.value;
+    db.active = s.id; db.observer = observer; db.lastSpot = spotSel.value; db.lastListType = chosenListType;
     save();
     try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
+    try {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          pos => { s.lat = pos.coords.latitude; s.lng = pos.coords.longitude; save(); },
+          () => {}, { timeout: 8000, maximumAge: 60000 });
+      }
+    } catch (e) {}
     view.q = ''; view.seenOnly = false;
     render();
   };
@@ -183,6 +229,7 @@ function renderHome() {
       h('label', {}, 'Observer', obs),
       h('label', {}, 'Spot', spotSel),
       h('p', {}, h('button', { class: 'link', onclick: addSpot }, '+ Add spot')),
+      h('div', { class: 'field' }, h('span', { class: 'fieldlabel' }, 'Species list'), listPicker),
       h('button', { class: 'primary', onclick: start }, 'Start session'),
       h('h2', {}, 'Finished sessions'),
       history,
@@ -193,7 +240,7 @@ function renderHome() {
 
 function renderSession(s) {
   lockScreen();
-  const data = speciesByTaxon();
+  const data = speciesByTaxon(s.listType);
   const taxa = Object.keys(data);
   if (!view.taxon || !taxa.includes(view.taxon)) view.taxon = taxa[0];
 
@@ -251,7 +298,7 @@ function renderSession(s) {
   const addSpecies = () => {
     const name = (prompt(`New ${view.taxon} species name (counted once):`, view.q.trim()) || '').trim();
     if (!name) return;
-    const known = Object.values(speciesByTaxon()).flat().find(x => x.n.toLowerCase() === name.toLowerCase());
+    const known = knownSpecies(view.taxon, name);
     const finalName = known ? known.n : name;
     if (!known) { (db.custom[view.taxon] = db.custom[view.taxon] || []).push({ n: name }); }
     s.events.push({ t: new Date().toISOString(), sp: finalName, tx: view.taxon });
