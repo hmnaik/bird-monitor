@@ -1,0 +1,46 @@
+{
+  "title": "Bird Monitor",
+  "_comment": "Edit this file to set your spots and species checklists. 'n' = display name (required), 's' = scientific name (optional). Plain strings also work. Replace the sample lists below with your site's checklist.",
+  "spots": ["Spot 1", "Spot 2", "Spot 3", "Spot 4"],
+  "taxa": {
+    "Birds": [
+      {"n": "Black Drongo", "s": "Dicrurus macrocercus"},
+      {"n": "Common Myna", "s": "Acridotheres tristis"},
+      {"n": "House Crow", "s": "Corvus splendens"},
+      {"n": "Large-billed Crow", "s": "Corvus macrorhynchos"},
+      {"n": "Red-vented Bulbul", "s": "Pycnonotus cafer"},
+      {"n": "Oriental Magpie-Robin", "s": "Copsychus saularis"},
+      {"n": "Common Tailorbird", "s": "Orthotomus sutorius"},
+      {"n": "Asian Koel", "s": "Eudynamys scolopaceus"},
+      {"n": "Rose-ringed Parakeet", "s": "Psittacula krameri"},
+      {"n": "Spotted Dove", "s": "Spilopelia chinensis"},
+      {"n": "Rock Pigeon", "s": "Columba livia"},
+      {"n": "Cattle Egret", "s": "Bubulcus ibis"},
+      {"n": "Little Egret", "s": "Egretta garzetta"},
+      {"n": "Indian Pond Heron", "s": "Ardeola grayii"},
+      {"n": "Black Kite", "s": "Milvus migrans"},
+      {"n": "White-throated Kingfisher", "s": "Halcyon smyrnensis"},
+      {"n": "Green Bee-eater", "s": "Merops orientalis"},
+      {"n": "Coppersmith Barbet", "s": "Psilopogon haemacephalus"},
+      {"n": "Indian Roller", "s": "Coracias benghalensis"},
+      {"n": "Hoopoe", "s": "Upupa epops"},
+      {"n": "House Sparrow", "s": "Passer domesticus"},
+      {"n": "Scaly-breasted Munia", "s": "Lonchura punctulata"},
+      {"n": "Barn Swallow", "s": "Hirundo rustica"},
+      {"n": "Purple Sunbird", "s": "Cinnyris asiaticus"},
+      {"n": "Jungle Babbler", "s": "Argya striata"}
+    ],
+    "Mammals": [
+      {"n": "Rhesus Macaque", "s": "Macaca mulatta"},
+      {"n": "Northern Plains Gray Langur", "s": "Semnopithecus entellus"},
+      {"n": "Indian Palm Squirrel", "s": "Funambulus palmarum"},
+      {"n": "Jackal", "s": "Canis aureus"},
+      {"n": "Mongoose", "s": "Urva edwardsii"}
+    ],
+    "Herps": [
+      {"n": "Oriental Garden Lizard", "s": "Calotes versicolor"},
+      {"n": "Common House Gecko", "s": "Hemidactylus frenatus"},
+      {"n": "Common Indian Toad", "s": "Duttaphrynus melanostictus"}
+    ]
+  }
+}
